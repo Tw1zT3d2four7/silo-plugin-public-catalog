@@ -83,4 +83,4 @@ make test    # go test ./... + pnpm run test in web/
 
 The frontend lives in `web/` (React 19, TypeScript, Vite, Tailwind v4, Radix, isomorphic-dompurify, pnpm) and emits into `internal/server/public/dist`, which is `//go:embed`-ed into the binary.
 
-CI builds linux-amd64 binaries on push to main via the reusable workflow in [RXWatcher/silo-plugin-repository](https://github.com/RXWatcher/silo-plugin-repository) and publishes them to the catalog at [`./binaries/`](https://github.com/RXWatcher/silo-plugin-repository/tree/main/binaries).
+CI is maintained in this fork. Pushes to `main` run Go and frontend tests, build the Linux amd64 plugin, generate a SHA-256 checksum and checksum-bearing manifest, publish a downloadable tar.gz package and rolling `plugin-latest` GitHub Release, and publish a GHCR package image. GitHub also provides source ZIP/TAR archives for the release tag. Publishing release metadata into a shared plugin catalog is a separate step and is not yet configured.
