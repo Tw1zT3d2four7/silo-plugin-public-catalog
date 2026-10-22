@@ -13,7 +13,9 @@ web-deps:
 web-build: web-deps
 	cd web && $(PNPM) build
 
-test: test-go test-web
+test: web-build
+	$(MAKE) test-go
+	$(MAKE) test-web
 
 test-go:
 	$(GO) test ./...
