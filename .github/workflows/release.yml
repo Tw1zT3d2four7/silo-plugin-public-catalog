@@ -4,11 +4,16 @@ on:
   push:
     branches:
       - main
+      - fix/self-contained-release-workflow
   workflow_dispatch:
 
 permissions:
   contents: write
   packages: write
+
+concurrency:
+  group: plugin-release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   PLUGIN_NAME: silo-plugin-public-catalog
@@ -16,7 +21,7 @@ env:
   IMAGE_NAME: ghcr.io/tw1zt3d2four7/silo-plugin-public-catalog
 
 jobs:
-  test-build:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,8 +44,12 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+          cache-dependency-path: go.sum
 
-      - name: Test
+      - name: Install frontend dependencies
+        run: pnpm --dir web install --frozen-lockfile
+
+      - name: Test Go and web code
         run: make test
 
       - name: Build Linux amd64 plugin
@@ -53,9 +62,8 @@ jobs:
           file "$PLUGIN_NAME"
           sha256sum "$PLUGIN_NAME" | tee "$PLUGIN_NAME.sha256"
 
-      - name: Prepare release assets
+      - name: Prepare release package
         run: |
-          cp "$MANIFEST_PATH" manifest.json
           checksum="$(sha256sum "$PLUGIN_NAME" | awk '{print $1}')"
           jq --arg checksum "$checksum" '.checksum = $checksum' "$MANIFEST_PATH" > manifest.json
           tar -czf "$PLUGIN_NAME-linux-amd64.tar.gz" "$PLUGIN_NAME" manifest.json "$PLUGIN_NAME.sha256"
@@ -74,8 +82,8 @@ jobs:
           file: .github/package.Dockerfile
           push: ${{ github.ref == 'refs/heads/main' }}
           tags: |
-            ghcr.io/tw1zt3d2four7/silo-plugin-public-catalog:latest
-            ghcr.io/tw1zt3d2four7/silo-plugin-public-catalog:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
           labels: |
             org.opencontainers.image.source=https://github.com/Tw1zT3d2four7/silo-plugin-public-catalog
             org.opencontainers.image.revision=${{ github.sha }}
@@ -86,7 +94,7 @@ jobs:
         with:
           tag_name: plugin-latest
           name: Latest plugin build
-          body: Automated Linux amd64 build for the current main branch.
+          body: Automated Linux amd64 plugin build for the current main branch.
           prerelease: true
           make_latest: false
           overwrite_files: true
@@ -95,23 +103,3 @@ jobs:
             ${{ env.PLUGIN_NAME }}.sha256
             ${{ env.PLUGIN_NAME }}-linux-amd64.tar.gz
             manifest.json
-
-      - name: Publish catalog metadata to this repository
-        if: github.ref == 'refs/heads/main'
-        run: |
-          checksum="$(sha256sum "$PLUGIN_NAME" | awk '{print $1}')"
-          jq --arg checksum "$checksum" '.checksum = $checksum' "$MANIFEST_PATH" > manifest.json
-          jq -n --slurpfile manifest manifest.json \
-            --arg binary_url "https://github.com/${GITHUB_REPOSITORY}/releases/download/plugin-latest/${PLUGIN_NAME}" \
-            --arg checksum "$checksum" \
-            '{plugins: [{manifest: $manifest[0], binaries: {"linux/amd64": {url: $binary_url, checksum: $checksum}}}]}' \
-            > catalog.json
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add catalog.json
-          if git diff --cached --quiet; then
-            echo "Catalog metadata is unchanged."
-          else
-            git commit -m "chore: update plugin catalog [skip ci]"
-            git push origin HEAD:main
-          fi
